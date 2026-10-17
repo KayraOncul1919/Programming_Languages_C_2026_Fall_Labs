@@ -1,12 +1,13 @@
 // week5_task3_student_management_system.c
-// Name: ________  Surname: ________  Student ID: ________
+// Name: Kayra Aslan  Surname: Oncul  Student ID: 241ADB119
 //
 // Task 3: Mini-project – Student management system with file persistence
 // Week 5 – Files & Modular Programming
-// TODO: Implement the functions to load, save, add, and list students.
 //
 // Build: make lab5   Run: ./bin/week5_task3_student_management_system
 
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,10 +35,11 @@ int main(void) {
     int count = 0;
     char input[LINE_LEN];
     int running = 1;
+    int status = EXIT_SUCCESS;
 
-    // TODO: Load existing data: count = load_students(students, MAX_STUDENTS);
+    // Load existing data (0 on first run)
+    count = load_students(students, MAX_STUDENTS);
     printf("Loaded %d student(s) from %s\n", count, DATA_FILE);
-    (void)students;  // remove this line once you use the array
 
     while (running) {
         printf("\n=== Student Management System ===\n");
@@ -56,14 +58,18 @@ int main(void) {
 
         switch (choice) {
             case 1:
-                // TODO: Call list_students()
+                list_students(students, count);
                 break;
             case 2:
-                // TODO: Call add_student()
+                add_student(students, &count);
                 break;
             case 3:
-                // TODO: Call save_students(). If it fails, print an error message.
-                printf("Data saved. Goodbye!\n");
+                if (save_students(students, count) != 0) {
+                    fprintf(stderr, "Error: could not save data to %s\n", DATA_FILE);
+                    status = EXIT_FAILURE;
+                } else {
+                    printf("Data saved. Goodbye!\n");
+                }
                 running = 0;
                 break;
             default:
@@ -71,7 +77,7 @@ int main(void) {
         }
     }
 
-    return EXIT_SUCCESS;
+    return status;
 }
 
 // Provided helper – prints a prompt and reads one line from stdin into buf.
@@ -92,38 +98,116 @@ int read_line(const char *prompt, char *buf, size_t size) {
     return 0;
 }
 
-// TODO: Implement load_students()
-// Open DATA_FILE for reading. If it cannot be opened (e.g. first run), return 0.
-// Read the file line by line with fgets(); parse "name,id,gpa" with
-// sscanf(line, "%49[^,],%d,%f", ...) and keep only lines where sscanf returned 3.
-// Stop when max records have been loaded. Close the file and return the number loaded.
+// Loads records from DATA_FILE. Missing file (first run) or empty file -> 0.
+// Blank/malformed lines are skipped; never more than max records are stored.
 int load_students(Student arr[], int max) {
-    (void)arr; (void)max;  // remove this line when you implement the function
-    return 0;
+    if (arr == NULL || max <= 0) {
+        return 0;
+    }
+
+    FILE *fp = fopen(DATA_FILE, "r");
+    if (fp == NULL) {
+        return 0;                               // not an error: nothing saved yet
+    }
+
+    char line[LINE_LEN];
+    int count = 0;
+
+    while (count < max && fgets(line, sizeof line, fp) != NULL) {
+        // If the line did not fit in the buffer, throw away the rest of it
+        if (strchr(line, '\n') == NULL && !feof(fp)) {
+            int c;
+            while ((c = fgetc(fp)) != '\n' && c != EOF) { }
+        }
+
+        Student s = {0};
+        // %49[^,] = up to 49 chars that are not a comma (spaces allowed)
+        if (sscanf(line, "%49[^,],%d,%f", s.name, &s.id, &s.gpa) == 3) {
+            arr[count++] = s;
+        }
+        // otherwise: blank or malformed line -> skipped
+    }
+
+    fclose(fp);
+    return count;
 }
 
-// TODO: Implement save_students()
-// Open DATA_FILE for writing ("w"), return -1 if fopen() fails.
-// Write one line per student: fprintf(fp, "%s,%d,%.2f\n", ...). Close the file and return 0.
+// Overwrites DATA_FILE with all students, one "name,id,gpa" line each.
 int save_students(const Student arr[], int count) {
-    (void)arr; (void)count;  // remove this line when you implement the function
-    return -1;
+    FILE *fp = fopen(DATA_FILE, "w");
+    if (fp == NULL) {
+        return -1;
+    }
+
+    int ok = 1;
+    for (int i = 0; i < count; i++) {
+        if (fprintf(fp, "%s,%d,%.2f\n", arr[i].name, arr[i].id, arr[i].gpa) < 0) {
+            ok = 0;
+            break;
+        }
+    }
+
+    if (fclose(fp) != 0) {
+        ok = 0;
+    }
+    return ok ? 0 : -1;
 }
 
-// TODO: Implement add_student()
-// 1. If *count >= MAX_STUDENTS, print "Cannot add more students (limit reached)." and return.
-// 2. Use read_line() to ask "Enter name: ", "Enter ID: " and "Enter GPA: ".
-//    If read_line() returns -1 (end of input), just return.
-// 3. Validate: name not empty, no ',' in name, ID is an integer, GPA is a number in 0.0–4.0
-//    (strtol / strtof are useful). Otherwise print "Invalid input. Student not added." and return.
-// 4. Store the student at arr[*count], increase *count, print "Student added successfully!"
+// Asks for name, ID and GPA, validates them and appends the student.
 void add_student(Student arr[], int *count) {
-    (void)arr; (void)count;  // remove this line when you implement the function
+    if (*count >= MAX_STUDENTS) {
+        printf("Cannot add more students (limit reached).\n");
+        return;
+    }
+
+    char name[LINE_LEN], id_str[LINE_LEN], gpa_str[LINE_LEN];
+
+    // Read all three answers first so the input stays in sync even if one is invalid
+    if (read_line("Enter name: ", name, sizeof name) != 0) return;
+    if (read_line("Enter ID: ", id_str, sizeof id_str) != 0) return;
+    if (read_line("Enter GPA: ", gpa_str, sizeof gpa_str) != 0) return;
+
+    // Name: not empty/blank, no comma, fits in the array
+    const char *p = name;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '\0' || strchr(name, ',') != NULL || strlen(name) >= NAME_LEN) {
+        printf("Invalid input. Student not added.\n");
+        return;
+    }
+
+    // ID: must be a whole number that fits in an int
+    char *end;
+    errno = 0;
+    long id = strtol(id_str, &end, 10);
+    if (end == id_str || *end != '\0' || errno == ERANGE || id < INT_MIN || id > INT_MAX) {
+        printf("Invalid input. Student not added.\n");
+        return;
+    }
+
+    // GPA: must be a number between 0.0 and 4.0 (NaN fails these comparisons too)
+    float gpa = strtof(gpa_str, &end);
+    if (end == gpa_str || *end != '\0' || !(gpa >= 0.0f && gpa <= 4.0f)) {
+        printf("Invalid input. Student not added.\n");
+        return;
+    }
+
+    Student *s = &arr[*count];
+    strcpy(s->name, name);                      // length already checked above
+    s->id = (int)id;
+    s->gpa = gpa;
+    (*count)++;
+    printf("Student added successfully!\n");
 }
 
-// TODO: Implement list_students()
-// If count is 0 print "No students found."; otherwise print a header and one line per student,
-// e.g. printf("%-5d %-20s %.2f\n", id, name, gpa);
+// Prints a table of all students, or a message if there are none.
 void list_students(const Student arr[], int count) {
-    (void)arr; (void)count;  // remove this line when you implement the function
+    if (count == 0) {
+        printf("No students found.\n");
+        return;
+    }
+
+    printf("%-5s %-20s %s\n", "ID", "Name", "GPA");
+    for (int i = 0; i < count; i++) {
+        printf("%-5d %-20s %.2f\n", arr[i].id, arr[i].name, arr[i].gpa);
+    }
 }

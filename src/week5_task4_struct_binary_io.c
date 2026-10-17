@@ -1,5 +1,5 @@
 // week5_task4_struct_binary_io.c   (BONUS)
-// Name: ________  Surname: ________  Student ID: ________
+// Name: Kayra Aslan  Surname: Oncul  Student ID: 241ADB119
 //
 // Task 4: Save and load a struct in binary format with fwrite()/fread()
 // Week 5 – Files & Modular Programming
@@ -23,6 +23,9 @@ int  save_student_binary(const Student *s, const char *filename);  // 0 on succe
 int  load_student_binary(const char *filename, Student *out);      // 0 on success, -1 on error
 long file_size(const char *filename);                              // bytes, -1 on error
 
+// Extra helper (not graded): same text format as Task 2
+static int save_student_text(const Student *s, const char *filename);
+
 int main(void) {
     Student s1 = {0};          // zero-initialised so unused name bytes are not garbage on disk
     strcpy(s1.name, "Alice");
@@ -34,35 +37,99 @@ int main(void) {
     const char *txt_file = "student.txt";
 
     printf("Saving student in binary format...\n");
-    // TODO: save_student_binary(&s1, bin_file); handle failure
+    if (save_student_binary(&s1, bin_file) != 0) {
+        fprintf(stderr, "Error: could not save %s\n", bin_file);
+        return EXIT_FAILURE;
+    }
 
-    // TODO: Save the same record as text ("name age gpa") to txt_file for comparison
+    // Save the same record as text so we can compare sizes
+    if (save_student_text(&s1, txt_file) != 0) {
+        fprintf(stderr, "Error: could not save %s\n", txt_file);
+        return EXIT_FAILURE;
+    }
 
     printf("Loading student from binary file...\n");
-    // TODO: load_student_binary(bin_file, &loaded); handle failure
+    if (load_student_binary(bin_file, &loaded) != 0) {
+        fprintf(stderr, "Error: could not load %s\n", bin_file);
+        return EXIT_FAILURE;
+    }
 
-    // TODO: printf("Loaded student: %s, %d, GPA %.2f\n", ...);
-    // TODO: printf("Text file size: %ld bytes\n", file_size(txt_file));
-    // TODO: printf("Binary file size: %ld bytes\n", file_size(bin_file));
+    printf("Loaded student: %s, %d, GPA %.2f\n", loaded.name, loaded.age, loaded.gpa);
+    printf("Text file size: %ld bytes\n", file_size(txt_file));
+    printf("Binary file size: %ld bytes\n", file_size(bin_file));
 
-    (void)loaded; (void)bin_file; (void)txt_file;  // remove once used
     return EXIT_SUCCESS;
 }
 
-// TODO: open with "wb", fwrite(s, sizeof(Student), 1, fp) must return 1, close, return 0/-1
+// Writes the whole struct as raw bytes.
 int save_student_binary(const Student *s, const char *filename) {
-    (void)s; (void)filename;
-    return -1;
+    if (s == NULL || filename == NULL) {
+        return -1;
+    }
+
+    FILE *fp = fopen(filename, "wb");
+    if (fp == NULL) {
+        return -1;
+    }
+
+    int ok = (fwrite(s, sizeof(Student), 1, fp) == 1);   // must write exactly 1 element
+    if (fclose(fp) != 0) {
+        ok = 0;
+    }
+    return ok ? 0 : -1;
 }
 
-// TODO: open with "rb", fread(out, sizeof(Student), 1, fp) must return 1, close, return 0/-1
+// Reads the whole struct back from raw bytes.
 int load_student_binary(const char *filename, Student *out) {
-    (void)filename; (void)out;
-    return -1;
+    if (filename == NULL || out == NULL) {
+        return -1;
+    }
+
+    FILE *fp = fopen(filename, "rb");
+    if (fp == NULL) {
+        return -1;
+    }
+
+    Student tmp;
+    int ok = (fread(&tmp, sizeof(Student), 1, fp) == 1);  // must read exactly 1 element
+    fclose(fp);
+
+    if (!ok) {
+        return -1;
+    }
+    tmp.name[MAX_NAME_LEN - 1] = '\0';   // be safe against a corrupt file without '\0'
+    *out = tmp;
+    return 0;
 }
 
-// TODO: open with "rb", fseek(fp, 0, SEEK_END), size = ftell(fp), close, return size (-1 on error)
+// Returns the file size in bytes, or -1 on error.
 long file_size(const char *filename) {
-    (void)filename;
-    return -1;
+    if (filename == NULL) {
+        return -1;
+    }
+
+    FILE *fp = fopen(filename, "rb");
+    if (fp == NULL) {
+        return -1;
+    }
+
+    if (fseek(fp, 0, SEEK_END) != 0) {   // jump to the end...
+        fclose(fp);
+        return -1;
+    }
+    long size = ftell(fp);               // ...the position there is the size
+    fclose(fp);
+    return size;                         // ftell() returns -1 on error
+}
+
+static int save_student_text(const Student *s, const char *filename) {
+    FILE *fp = fopen(filename, "w");
+    if (fp == NULL) {
+        return -1;
+    }
+    int ok = (fprintf(fp, "%s %d %.2f\n", s->name, s->age, s->gpa) > 0);
+    if (fclose(fp) != 0) {
+        ok = 0;
+    }
+    return ok ? 0 : -1;
 }
